@@ -5,10 +5,9 @@ void inject(pid_t pid , void *dlopenAddr, char * path)
 {
 	
 	ALONG locallibc=0, remotelibc=0, memaddr=0,tmp=0;
-	int status=0;
-	
-	//int x;
+	int status=0;	
 	errno = 0;
+	
 	// Attach to the target process
 	if(ptrace(PTRACE_ATTACH, pid, NULL, NULL)==-1 && errno != 0)
 	 {
@@ -36,10 +35,12 @@ void inject(pid_t pid , void *dlopenAddr, char * path)
 	tmp=0; 
 	 
 	tmp=call_func(pid,dlopenAddr,2,memaddr,(ALONG)RTLD_LAZY);
-	if (tmp) 
-		printf("[+] Injected library loaded at: %p\n", (void*)tmp);
-	else 
-		printf("[!] Library could not be injected\n");	
+	
+	printf("[*] Injected library return (R0): %p\n", (void*)tmp);
+		
+		
+	// TODO unmap memaddr :)
+	// It may break the sharedlib if it's still using/ref the mmaped region!
 	
 	
 	if(ptrace(PTRACE_DETACH, pid, NULL, NULL)==-1 && errno != 0)
@@ -87,22 +88,28 @@ char ldmode=0;
 		 ldmode=1;
 	 }
 	printf("[*] Local dlopen() found at address %p\n", dlopenAddr);
-
+	
+	if(!findLibrary(LIB, atoi(argv[1])))
+	{
+		printf("[!] Target task is on another arch!\n");
+		exit(1);
+	}
 	remoteLib = findLibrary(ldmode?"libdl":"libc", atoi(argv[1]));
 	localLib = findLibrary(ldmode?"libdl":"libc", 0);
 	//printf("[*] Local dl symbol located at address %p\n", (void*) localLib);	
-	//printf("[*] Remote (%d) dl symbol located at address %p\n", atoi(argv[1]), (void*)remoteLib);	
-
-	
+	//printf("[*] Remote (%d) dl symbol located at address %p\n", atoi(argv[1]), (void*)remoteLib);		
 	//printf("[*] dlopen() offset: %llx \n", (unsigned long)(dlopenAddr - localLib));
 	dlopenAddr = (void *) (remoteLib + (dlopenAddr - localLib));
 	printf("[*] Remote (%d) dlopen() found at address %p\n",atoi(argv[1]),(void *)dlopenAddr);
 	
+	//one opened handle in vougue :)
 	if(!fopen(argv[2],"r"))
 	 {
 	   printf("[!] Lib %s cannot be found?\n",argv[2]);
 	   exit(1);
-	 }
-	// Inject our shared library into the target process
+	   
+	 }	 
+	// Inject shared library into the target task
 	inject(atoi(argv[1]), dlopenAddr, argv[2]);
+	printf("[*] DOne.\n");	
 }

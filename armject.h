@@ -1,15 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/ptrace.h>
-#include <sys/types.h>
 #include <sys/wait.h>
-#include <sys/user.h>
-#include <unistd.h>
 #include <dlfcn.h>
 #include <string.h>
 #include <errno.h>
 #include <sys/mman.h>
-
+#include <elf.h>
 
 #define CPSR_T_MASK ( 1u << 5)
 #ifdef __aarch64__
@@ -20,9 +17,11 @@
   #define ARM_sp   sp
   #define ARM_pc   pc
   #define ARM_cpsr pstate
-  #define ALONG     unsigned long long
+  #define ALONG    unsigned long long  
+  #define LIB 	   "lib64/"	
 #else
-  #define ALONG     unsigned long 
+  #define LIB 	   "lib/"	
+  #define ALONG    unsigned long 
 #endif
 
 extern int errno;
