@@ -1,6 +1,6 @@
 #include "armject.h"
 
-
+/*
 void isolate(pid_t pid , void *remoteAddr) 
 {
 	
@@ -26,13 +26,16 @@ void isolate(pid_t pid , void *remoteAddr)
 		return;
 	}
 }
-
-void inject(pid_t pid , void *remoteAddr, char * path) 
+*/
+void inject(pid_t pid , void *remoteAddr, char * path, void *dlerr) 
 {
 	
-	ALONG locallibc=0, remotelibc=0, memaddr=0,tmp=0;
+	ALONG locallibc=0, remotelibc=0, memaddr=0,tmp=0, err=0;
 	int status=0;	
-	errno = 0;
+	errno = 0;	
+	char  errstr[1024];
+	
+	
 	
 	// Attach to the target process
 	if(ptrace(PTRACE_ATTACH, pid, NULL, NULL)==-1 && errno != 0)
@@ -61,8 +64,21 @@ void inject(pid_t pid , void *remoteAddr, char * path)
 	tmp=0; 
 	 
 	tmp=call_func(pid,remoteAddr,2,memaddr,(ALONG)RTLD_LAZY);
+	err=call_func(pid,dlerr,0);
 	
 	printf("[*] Injected library return (R0): %p\n", (void*)tmp);
+	if(!tmp && err)	
+	{
+	  errstr[0]=1;
+	  for(int a=0;errstr[0]!=0 && a<1024;a++)
+	   {	  	
+	     ptraceRead(pid,(void *)(err+a),&errstr[0],1); 
+	     errstr[a+1]=errstr[0];
+	   }
+	   
+	  printf("[-] Dlerror: %s\n",errstr+1);
+    }
+	
 		
 		
 	// TODO unmap memaddr :)
@@ -82,6 +98,7 @@ int main(int argc, char **argv)
 	ALONG remoteLib, localLib;
 	void *remoteAddr = NULL;
 	void *libAddr = NULL;
+	void *dlerr=0;
 	char ldmode=0;
 
 	if(argc<2)
@@ -113,11 +130,7 @@ int main(int argc, char **argv)
 			ldmode=1;
 		}
 	}
-	else	
-	{   
-		printf("[+] Symbol is for unshare()\n");
-		remoteAddr = dlsym(libAddr, "unshare");
-	}
+	
 		
 	if (remoteAddr == NULL) 
 	{
@@ -125,6 +138,7 @@ int main(int argc, char **argv)
 		exit(1);
 	}		
 	 
+	//refatorar essa bagunça maluca de variaveis!!! oO
 	printf("[*] Local symbol found at address %p\n", remoteAddr);
 	
 	if(!findLibrary(LIB, atoi(argv[1])))
@@ -138,6 +152,7 @@ int main(int argc, char **argv)
 	//printf("[*] Remote (%d) dl symbol located at address %p\n", atoi(argv[1]), (void*)remoteLib);		
 	//printf("[*] dlopen() offset: %llx \n", (unsigned long)(remoteAddr - localLib));
 	remoteAddr = (void *) (remoteLib + (remoteAddr - localLib));
+	dlerr= (void *) (remoteLib + (dlerror - localLib));
 	printf("[*] Remote (%d) symbol found at address %p\n",atoi(argv[1]),(void *)remoteAddr);
 	
 	if(argc>2)
@@ -149,9 +164,9 @@ int main(int argc, char **argv)
 			exit(1);	   
 		}	 
 		// Inject shared library into the target task
-		inject(atoi(argv[1]), remoteAddr, argv[2]);
+		inject(atoi(argv[1]), remoteAddr, argv[2],dlerr);
 	}
-	else
-		isolate(atoi(argv[1]), remoteAddr);
+	//else
+	//	isolate(atoi(argv[1]), remoteAddr,dlerroraddr);
 	printf("[*] Done.\n");	
 }
