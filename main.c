@@ -11,18 +11,18 @@ void isolate(pid_t pid , void *remoteAddr)
 	// Attach to the target process
 	if(ptrace(PTRACE_ATTACH, pid, NULL, NULL)==-1 && errno != 0)
 	 {
-		printf("[!] Ptrace Attach Error: %d\n",errno); 
+		mprintf("[!] Ptrace Attach Error: %d\n",errno); 
 		return;
 	 }
 	waitpid(pid, &status, WUNTRACED);
 	
 	tmp=call_func(pid,remoteAddr,1,(ALONG)CLONE_NEWNET);
 	
-	printf("[*] Remote call returned (R0): %p\n", (void*)tmp);		
+	mprintf("[*] Remote call returned (R0): %p\n", (void*)tmp);		
 	
 	if(ptrace(PTRACE_DETACH, pid, NULL, NULL)==-1 && errno != 0)
 	{
-		printf("[!] Ptrace Detach Error: %d\n",errno); 
+		mprintf("[!] Ptrace Detach Error: %d\n",errno); 
 		return;
 	}
 }
@@ -33,41 +33,49 @@ void inject(pid_t pid , void *remoteAddr, char * path, void *dlerr)
 	ALONG locallibc=0, remotelibc=0, memaddr=0,tmp=0, err=0;
 	int status=0;	
 	errno = 0;	
-	char  errstr[1024];
+    char errstr[1024];
 	
 	
 	
 	// Attach to the target process
 	if(ptrace(PTRACE_ATTACH, pid, NULL, NULL)==-1 && errno != 0)
 	 {
-		printf("[!] Ptrace Attach Error: %d\n",errno); 
+		mprintf("[!] Ptrace Attach Error: %d\n",errno); 
 		return;
 	 }
 	waitpid(pid, &status, WUNTRACED);
 	
 	locallibc=findLibrary("libc.so", 0);
 	remotelibc=findLibrary("libc.so", pid);
-	printf("[*] Local libc at: %p - Remote at: %p\n", (void*)locallibc,(void*)remotelibc);	
+	mprintf("[*] Local libc at: %p - Remote(%d) at: %p\n", (void*)locallibc,pid,(void*)remotelibc);	
 	tmp=(ALONG)mmap - locallibc;
-	printf("[*] Local mmap at: %p\n",(void*) mmap);	
-	printf("[*] Remote (%d) mmap at: %p\n", pid, (void*)(remotelibc+tmp));	
+	mprintf("[*] Local mmap at: %p - Remote(%d) at: %p\n",(void*) mmap,pid, (void*)(remotelibc+tmp));
+	//mprintf("[*] Remote __loader_dlopen prev.calc at: %p\n", (void*)(remotelibc+(dlsym(dlopen("libdl.so", RTLD_NOW), "__loader_dlopen") -locallibc)));	
 	
 	memaddr=call_func(pid,(void*)(remotelibc+tmp),6,NULL,1024,PROT_READ | PROT_WRITE,MAP_PRIVATE | MAP_ANONYMOUS, NULL,NULL);
 	if(!memaddr || memaddr==-1)
 	  {
-		printf("[!] Mmap error: %p\n",(void *)memaddr); 
+		mprintf("[!] Mmap error: %p\n",(void *)memaddr); 
 		return;
 	 }
+	tmp=0;
+	mprintf("[*] Mmap addr: %p\n",(void *)memaddr); 
+	ptraceWrite(pid,(void*)memaddr, path, strlen(path)+1);		
+	ptraceRead(pid,(void *)(remoteAddr+0xC),&tmp,4); 	
+	//tmp<<=sizeof(ALONG)*4;
+	//tmp>>=sizeof(ALONG)*4;
+	mprintf("[*] Remote __loader_dlopen instr: %p addr: %p\n",(void *)(tmp),remoteAddr-OFFSET);
 	
-	printf("[*] Mmap addr: %p\n",(void *)memaddr); 
-	ptraceWrite(pid,(void*)memaddr, path, strlen(path)+1);	
 	tmp=0; 
-	 
-	tmp=call_func(pid,remoteAddr,2,memaddr,(ALONG)RTLD_LAZY);
+	
+	// Offset to __loader_dlopen, bypassing Android >7.0.1 namespace loader check in dlopen
+	//  3rd parameter is an addr of a lib in the app namespace :)
+
+	tmp=call_func(pid,remoteAddr-OFFSET,3,memaddr,(ALONG)RTLD_LAZY,remotelibc);
 	err=call_func(pid,dlerr,0);
 	
-	printf("[*] Injected library return (R0): %p\n", (void*)tmp);
-	if(!tmp && err)	
+	mprintf("[*] Injected library return (R0): %p\n", (void*)tmp);	
+    if((!tmp || tmp==memaddr) && err)	
 	{
 	  errstr[0]=1;
 	  for(int a=0;errstr[0]!=0 && a<1024;a++)
@@ -76,7 +84,7 @@ void inject(pid_t pid , void *remoteAddr, char * path, void *dlerr)
 	     errstr[a+1]=errstr[0];
 	   }
 	   
-	  printf("[-] Dlerror: %s\n",errstr+1);
+	  mprintf("[-] Dlerror: %s\n",errstr+1);
     }
 	
 		
@@ -87,7 +95,7 @@ void inject(pid_t pid , void *remoteAddr, char * path, void *dlerr)
 	
 	if(ptrace(PTRACE_DETACH, pid, NULL, NULL)==-1 && errno != 0)
 	{
-		printf("[!] Ptrace Detach Error: %d\n",errno); 
+		mprintf("[!] Ptrace Detach Error: %d\n",errno); 
 		return;
 	}
 	
@@ -103,70 +111,67 @@ int main(int argc, char **argv)
 
 	if(argc<2)
 	 {
-		 printf("[!] %s [pid] [lib absolute path]\n",argv[0]);
+		 mprintf("[!] %s [pid] [lib absolute path]\n",argv[0]);
 		exit(1);
 	 }
 	
-	libAddr =  dlopen("libc.so", RTLD_NOW);
+	libAddr =  dlopen("libdl.so", RTLD_NOW);
 	if (libAddr == NULL) {
-		printf("[!] Error opening libc.so\n");
+		mprintf("[!] Error opening libl.so\n");
 		exit(1);
 	}
 	
-	if(argc>2)
+
+	remoteAddr = dlsym(libAddr, "dlopen");	
+	if (remoteAddr == NULL) 
 	{
-		printf("[+] Symbol is for dlopen()\n");
-		remoteAddr = dlsym(libAddr, "__libc_dlopen_mode");		
-		if (remoteAddr == NULL) 
-		{
-			printf("[-] Error locating dlopen() into libc, trying libdl!\n");
-			libAddr =  dlopen("libdl.so", RTLD_NOW);
-			if (libAddr == NULL) {
-				printf("[!] Error opening libdl.so\n");
-				exit(1);
-			}
-		
-			remoteAddr = dlsym(libAddr, "dlopen");			
-			ldmode=1;
+		mprintf("[-] Error locating dlopen() into libc, trying libdl!\n");
+		libAddr =  dlopen("libdl.so", RTLD_NOW);
+		if (libAddr == NULL) {
+			mprintf("[!] Error opening libdl.so\n");
+			exit(1);
 		}
-	}
 	
+		//remoteAddr = dlsym(libAddr, "__loader_dlopen");	
+		remoteAddr = dlsym(libAddr, "dlopen");			
+		ldmode=1;
+	}	
 		
 	if (remoteAddr == NULL) 
 	{
-		printf("[!] Error locating symbol!\n");
+		mprintf("[!] Error locating symbol!\n");
 		exit(1);
 	}		
 	 
-	//refatorar essa bagunça maluca de variaveis!!! oO
-	printf("[*] Local symbol found at address %p\n", remoteAddr);
+	mprintf("[*] Symbol is dlopen()\n");	
+	mprintf("[*] Local symbol found at address %p\n", remoteAddr);
+	//mprintf("[*] Local __loader dlopen found at address %p\n", __loader_dlopen);
 	
 	if(!findLibrary(LIB, atoi(argv[1])))
 	{
-		printf("[!] Target task is on another arch!\n");
+		mprintf("[!] Target task is on another arch!\n");
 		exit(1);
 	}
-	remoteLib = findLibrary(ldmode?"libdl":"libc", atoi(argv[1]));
-	localLib = findLibrary(ldmode?"libdl":"libc", 0);
-	//printf("[*] Local dl symbol located at address %p\n", (void*) localLib);	
-	//printf("[*] Remote (%d) dl symbol located at address %p\n", atoi(argv[1]), (void*)remoteLib);		
-	//printf("[*] dlopen() offset: %llx \n", (unsigned long)(remoteAddr - localLib));
+	remoteLib = findLibrary(ldmode?"libc":"libdl", atoi(argv[1]));
+	localLib =  findLibrary(ldmode?"libc":"libdl", 0);
+	//mprintf("[*] Local dl symbol located at address %p\n", (void*) localLib);	
+	//mprintf("[*] Remote (%d) dl symbol located at address %p\n", atoi(argv[1]), (void*)remoteLib);		
+	//mprintf("[*] dlopen() offset: %llx \n", (unsigned long)(remoteAddr - localLib));
 	remoteAddr = (void *) (remoteLib + (remoteAddr - localLib));
 	dlerr= (void *) (remoteLib + (dlerror - localLib));
-	printf("[*] Remote (%d) symbol found at address %p\n",atoi(argv[1]),(void *)remoteAddr);
+	mprintf("[*] Remote (%d) symbol found at address %p\n",atoi(argv[1]),(void *)remoteAddr);
 	
-	if(argc>2)
+	
+	//one opened handle in vougue :)
+	if(!fopen(argv[2],"r"))
 	{
-		//one opened handle in vougue :)
-		if(!fopen(argv[2],"r"))
-		{
-			printf("[!] Lib %s cannot be found?\n",argv[2]);
-			exit(1);	   
-		}	 
-		// Inject shared library into the target task
-		inject(atoi(argv[1]), remoteAddr, argv[2],dlerr);
-	}
+		mprintf("[!] Lib %s cannot be found?\n",argv[2]);
+		exit(1);	   
+	}	 
+	// Inject shared library into the target task
+	inject(atoi(argv[1]), remoteAddr, argv[2],dlerr);
+	
 	//else
 	//	isolate(atoi(argv[1]), remoteAddr,dlerroraddr);
-	printf("[*] Done.\n");	
+	mprintf("[*] Done.\n");	
 }

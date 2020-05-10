@@ -17,7 +17,7 @@ void ptrace_getregs(pid_t pid , struct pt_regs *regs)
 
 	if(ret==-1 && errno != 0)
 	{
-		printf("[!] Ptrace GetRegs Error: %d\n",errno); 
+		mprintf("[!] Ptrace GetRegs Error: %d\n",errno); 
 		exit(1);
 	}
 }
@@ -38,11 +38,10 @@ void ptrace_setregs(pid_t pid , struct pt_regs *regs)
   
   	if(ret==-1 && errno != 0)
 	{
-		printf("[!] Ptrace SetRegs Error: %d\n",errno); 
+		mprintf("[!] Ptrace SetRegs Error: %d\n",errno); 
 		exit(1);
 	}
 }
-
 
 void ptraceRead(pid_t pid , void *addr, void *data, int len) 
 {
@@ -57,7 +56,8 @@ void ptraceRead(pid_t pid , void *addr, void *data, int len)
 			printf("[!] Ptrace PeekTxt Error: %d\n",errno);	
 			exit(1);
 		}
-		ptr[i] = word;
+		//ptr[i] = word;
+		memcpy(ptr,&word,len<sizeof(word)?len:sizeof(word));
 	}
 }
 
@@ -71,7 +71,7 @@ void ptraceWrite(pid_t pid , void *addr, void *data, int len)
 		memcpy(&word, data + i, sizeof(word));
 		if (ptrace(PTRACE_POKETEXT, pid, addr + i, word) == -1 && errno != 0) 
 		{
-			printf("[!] Ptrace PokeTxt Error: %d\n",errno);
+			mprintf("[!] Ptrace PokeTxt Error: %d\n",errno);
 			exit(1);
 		}
 	}
@@ -103,14 +103,14 @@ ALONG call_func(pid_t pid , void* function, int nargs, ... )
         {
            regs.uregs[i] = arg;     
 #ifdef DE  
-           printf("--Arg %d - %lx\n",i,regs.uregs[i]);  
+           mprintf("--Arg %d - %lx\n",i,regs.uregs[i]);  
 #endif  
 	   }  
        else 
         { // push remaining params onto stack
             regs.ARM_sp -= sizeof(arg) ;
 #ifdef DE
-            printf("--Arg %d %lx SP:%lu\n",i,arg,regs.ARM_sp); 
+            mprintf("--Arg %d %lx SP:%lu\n",i,arg,regs.ARM_sp); 
 #endif          
             ptraceWrite(pid,(void*)regs.ARM_sp, &arg, sizeof(ALONG));           
             
@@ -122,7 +122,7 @@ ALONG call_func(pid_t pid , void* function, int nargs, ... )
     regs.ARM_lr = 0;
     regs.ARM_pc = (ALONG) function;
 #ifdef DE
-    printf("--PC %lx\n",regs.ARM_pc);
+    mprintf("--PC %lx\n",regs.ARM_pc);
 #endif
     
  #ifndef __aarch64__    
@@ -142,7 +142,7 @@ ALONG call_func(pid_t pid , void* function, int nargs, ... )
     
     if(ptrace(PTRACE_CONT, pid, NULL, NULL)==-1 && errno != 0)
 	 {
-		printf("[!] Ptrace Continue Error: %d\n",errno); 
+		mprintf("[!] Ptrace Continue Error: %d\n",errno); 
 		exit(1);
 	 }
 	waitpid(pid, &status, WUNTRACED);
@@ -169,7 +169,7 @@ ALONG findLibrary(const char *library, pid_t pid)
 	fd = fopen(mapFilename, "r");
 	if(!fd)
 	{
-		printf("[!] Invalid PID!\n");
+		mprintf("[!] Invalid PID!\n");
 		exit(1);
 	}
 
