@@ -153,6 +153,37 @@ ALONG call_func(pid_t pid , void* function, int nargs, ... )
     return regs.ARM_r0;    
 }
 
+char * moveLibrary(const char *library, pid_t pid) 
+{
+	char cmdline[256];
+	char buffer[512];
+	char *rcmdline=NULL;
+	FILE *fd;
+	struct stat s;
+	
+	sprintf(cmdline,"/proc/%d/cmdline", pid);	
+
+	fd = fopen(cmdline, "r");
+	if(!fd)
+	{
+		mprintf("[!] Cmdline :%s not found!\n",cmdline);
+		exit(1);
+	}
+	fgets(cmdline, sizeof(cmdline), fd);
+	rcmdline=(char*)malloc(strlen("/data/data//files/")+strlen(cmdline)+strlen(library));
+	sprintf(rcmdline,"/data/data/%s/files",cmdline);
+	if(stat(rcmdline,&s)==-1 || !S_ISDIR(s.st_mode))
+	 {
+		mprintf("[!] Dir invalid: %s\n",rcmdline);
+		exit(1);
+	 }
+	sprintf(rcmdline,"%s/%s",rcmdline,library); 
+	sprintf(buffer,"cp %s %s",library,rcmdline);
+	//printf("%s\n",buffer);
+	if(system(buffer) <0 && errno)
+	 return (char*)-1;
+	return rcmdline;
+}
 
 ALONG findLibrary(const char *library, pid_t pid) 
 {

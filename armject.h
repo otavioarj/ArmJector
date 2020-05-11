@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <sys/mman.h>
 #include <elf.h>
+#include <sys/stat.h>
 
 #define CPSR_T_MASK ( 1u << 5)
 #ifdef __aarch64__
@@ -58,3 +59,4 @@ ALONG findLibrary(const char *library, pid_t pid);
 ALONG call_func(pid_t pid , void* function, int nargs, ... );
 void ptraceWrite(pid_t pid , void *addr, void *data, int len);
 void ptraceRead(pid_t pid , void *addr, void *data, int len) ;
+char* moveLibrary(const char *library, pid_t pid);

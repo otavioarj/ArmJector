@@ -107,7 +107,7 @@ int main(int argc, char **argv)
 	void *remoteAddr = NULL;
 	void *libAddr = NULL;
 	void *dlerr=0;
-	char ldmode=0;
+	char ldmode=0, *cmdline=NULL;	
 
 	if(argc<2)
 	 {
@@ -147,6 +147,13 @@ int main(int argc, char **argv)
 	mprintf("[*] Local symbol found at address %p\n", remoteAddr);
 	//mprintf("[*] Local __loader dlopen found at address %p\n", __loader_dlopen);
 	
+	cmdline=moveLibrary(argv[2],atoi(argv[1]));
+	if(!cmdline)
+	{
+		mprintf("[!] Error moving library to target!\n");
+		exit(1);
+	}
+	
 	if(!findLibrary(LIB, atoi(argv[1])))
 	{
 		mprintf("[!] Target task is on another arch!\n");
@@ -162,16 +169,23 @@ int main(int argc, char **argv)
 	mprintf("[*] Remote (%d) symbol found at address %p\n",atoi(argv[1]),(void *)remoteAddr);
 	
 	
-	//one opened handle in vougue :)
-	if(!fopen(argv[2],"r"))
+	//double check? :)
+	if(!fopen(cmdline,"r"))
 	{
-		mprintf("[!] Lib %s cannot be found?\n",argv[2]);
+		mprintf("[!] Lib %s cannot be found?\n",cmdline);
 		exit(1);	   
 	}	 
+	mprintf("[*] Using lib as %s\n",cmdline);
+	
 	// Inject shared library into the target task
-	inject(atoi(argv[1]), remoteAddr, argv[2],dlerr);
+	inject(atoi(argv[1]), remoteAddr,cmdline,dlerr);
 	
 	//else
 	//	isolate(atoi(argv[1]), remoteAddr,dlerroraddr);
-	mprintf("[*] Done.\n");	
+	mprintf("[+] Done.\n");	
+	mprintf("[*] Remove library from %s path? (*/n)",argv[1]);
+	if(getchar()!='n')
+	 if(remove(cmdline))
+	  mprintf("[-] Can't remove file!\n");	
+	   
 }
